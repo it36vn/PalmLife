@@ -19,8 +19,8 @@ class SubscriptionPlan {
         priceVnd: json['price_vnd'] as int,
         descriptionVi: json['description_vi'].toString(),
         descriptionEn: json['description_en'].toString(),
-        appleProductId: json['apple_product_id']?.toString(),
-        googleProductId: json['google_product_id']?.toString(),
+        appleProductId: _optionalString(json['apple_product_id']),
+        googleProductId: _optionalString(json['google_product_id']),
         storeProductType:
             json['store_product_type']?.toString() ?? 'subscription',
       );
@@ -36,4 +36,10 @@ class SubscriptionPlan {
   final String storeProductType;
 
   bool get isFree => code == 'free' || priceVnd == 0;
+  bool get isConsumableStoreProduct => storeProductType == 'consumable';
+}
+
+String? _optionalString(Object? value) {
+  final text = value?.toString().trim();
+  return text == null || text.isEmpty ? null : text;
 }

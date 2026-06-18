@@ -37,8 +37,8 @@ class AppStrings {
       ? 'I agree to the terms, privacy notice, and entertainment-only disclaimer.'
       : 'Tôi đồng ý điều khoản, thông báo quyền riêng tư và tuyên bố nội dung chỉ dùng cho giải trí.';
   String get quotaExhausted => isEn
-      ? 'Your current plan has no readings left. Please wait for your quota to reset or upgrade to a higher plan.'
-      : 'Gói hiện tại đã hết số lần xem. Vui lòng chờ đến khi làm mới lượt hoặc nâng cấp lên gói cao hơn.';
+      ? 'You have used all readings in your plan. Upgrade to continue.'
+      : 'Bạn đã dùng hết số lần xem trong gói. Để tiếp tục hãy nâng cấp.';
   String get upgradeNow => isEn ? 'Upgrade' : 'Nâng cấp';
   String get upgradeLifetime =>
       isEn ? 'Upgrade to Lifetime' : 'Nâng cấp gói Vĩnh viễn';
@@ -103,6 +103,9 @@ class AppStrings {
   String get callSupport => isEn ? 'Call' : 'Gọi';
   String get close => isEn ? 'Close' : 'Đóng';
   String get selectPlan => isEn ? 'Choose plan' : 'Chọn gói';
+  String get noAvailablePlans => isEn
+      ? 'No plans are available yet. Please wait!'
+      : 'Chưa có gói nào sẵn sằng. Bạn chờ nha!';
   String get analysisType => isEn ? 'Reading type' : 'Kiểu xem';
   String get combined => isEn ? 'Combined' : 'Tổng hợp';
   String get homeHeadline => isEn

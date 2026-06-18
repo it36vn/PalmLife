@@ -18,46 +18,77 @@ class SubscriptionScreen extends StatelessWidget {
     final upgradePlans = controller.plans
         .where((plan) => !plan.isFree)
         .toList();
+    final hasAvailablePlan = upgradePlans.any(_hasStoreProduct);
 
     return AppScaffold(
       title: s.subscription,
       children: [
         Text(s.legalShort),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: controller.isBusy ? null : controller.restorePurchases,
-          icon: const Icon(Icons.restore),
-          label: Text(
-            controller.locale == 'en'
-                ? 'Restore purchases'
-                : 'Khôi phục mua hàng',
-          ),
-        ),
-        const SizedBox(height: 16),
-        for (final plan in upgradePlans) ...[
-          Card(
-            child: ListTile(
-              title: Text(
-                controller.locale == 'en' ? plan.nameEn : plan.nameVi,
-              ),
-              subtitle: Text(_subtitleFor(plan)),
-              trailing: Text(
-                _storePriceFor(plan) ??
-                    (plan.priceVnd == 0
-                        ? '0 $currency'
-                        : '${_format(plan.priceVnd)} $currency'),
-              ),
-              onTap: controller.isBusy ? null : () => controller.buyPlan(plan),
+        if (hasAvailablePlan) ...[
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: controller.isBusy ? null : controller.restorePurchases,
+            icon: const Icon(Icons.restore),
+            label: Text(
+              controller.locale == 'en'
+                  ? 'Restore purchases'
+                  : 'Khôi phục mua hàng',
             ),
           ),
-          const SizedBox(height: 8),
         ],
+        const SizedBox(height: 16),
+        if (!hasAvailablePlan)
+          SoftPanel(
+            child: Text(
+              s.noAvailablePlans,
+              style: Theme.of(context).textTheme.bodyLarge,
+              textAlign: TextAlign.center,
+            ),
+          ),
+        if (hasAvailablePlan)
+          for (final plan in upgradePlans) ...[
+            Builder(
+              builder: (context) {
+                final hasStoreProduct = _hasStoreProduct(plan);
+                final canTap = hasStoreProduct && !controller.isBusy;
+                final textColor = hasStoreProduct
+                    ? null
+                    : Theme.of(context).disabledColor;
+
+                return AbsorbPointer(
+                  absorbing: !canTap,
+                  child: Card(
+                    child: ListTile(
+                      enabled: canTap,
+                      title: Text(
+                        controller.locale == 'en' ? plan.nameEn : plan.nameVi,
+                        style: TextStyle(color: textColor),
+                      ),
+                      subtitle: Text(
+                        _subtitleFor(plan),
+                        style: TextStyle(color: textColor),
+                      ),
+                      trailing: Text(
+                        _storePriceFor(plan) ??
+                            (plan.priceVnd == 0
+                                ? '0 $currency'
+                                : '${_format(plan.priceVnd)} $currency'),
+                        style: TextStyle(color: textColor),
+                      ),
+                      onTap: canTap ? () => controller.buyPlan(plan) : null,
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
         if (controller.message != null)
           Text(
             controller.message!,
             style: TextStyle(color: Theme.of(context).colorScheme.primary),
           ),
-        if (controller.error != null)
+        if (hasAvailablePlan && controller.error != null)
           Text(
             controller.error!,
             style: TextStyle(color: Theme.of(context).colorScheme.error),
@@ -70,16 +101,18 @@ class SubscriptionScreen extends StatelessWidget {
     final base = controller.locale == 'en'
         ? plan.descriptionEn
         : plan.descriptionVi;
-    if (plan.isFree || _storePriceFor(plan) != null) return base;
+    if (plan.isFree || _hasStoreProduct(plan)) return base;
 
     final note = controller.locale == 'en'
-        ? 'Create this product in App Store Connect and Google Play Console.'
-        : 'Cần tạo product này trong App Store Connect và Google Play Console.';
+        ? 'This plan is currently unavailable. Please try again later.'
+        : 'Gói này hiện chưa thể mua. Vui lòng thử lại sau.';
     return '$base\n$note';
   }
 
+  bool _hasStoreProduct(SubscriptionPlan plan) => _storePriceFor(plan) != null;
+
   String? _storePriceFor(SubscriptionPlan plan) {
-    final productId = plan.appleProductId ?? plan.googleProductId;
+    final productId = controller.storeProductIdFor(plan);
     if (productId == null) return null;
     return controller.storeProducts[productId]?.price;
   }

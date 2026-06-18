@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
 import '../../../core/network/api_client.dart';
@@ -27,7 +28,9 @@ class AppController extends ChangeNotifier {
   late final StreamSubscription<List<PurchaseDetails>> _purchaseSubscription;
   Timer? _realtimeTimer;
   bool _syncingRealtime = false;
+  bool _userStartedStorePurchase = false;
   final Set<int> _knownNotificationIds = <int>{};
+  final List<PurchaseDetails> _pendingStorePurchases = <PurchaseDetails>[];
 
   String locale = 'vi';
   UserProfile? user;
@@ -51,6 +54,8 @@ class AppController extends ChangeNotifier {
   bool get hasLifetimePlan => quota?.period == 'unlimited';
   int get unreadNotificationsCount =>
       notifications.where((item) => !item.isRead).length;
+
+  String? storeProductIdFor(SubscriptionPlan plan) => _store.productIdFor(plan);
 
   Future<void> restore() async {
     await _guard(() async {
@@ -167,28 +172,9 @@ class AppController extends ChangeNotifier {
     });
   }
 
-  Future<void> refreshQuota() async {
-    await _guard(() async {
-      final payload = await _repository.me();
-      user = payload?.user ?? user;
-      quota = payload?.quota ?? quota;
-      notifications = payload?.notifications ?? notifications;
-      _rememberNotifications(notifications);
-    });
-  }
-
-  Future<void> refreshQuotaIfResetElapsed() async {
-    final currentQuota = quota;
-    if (currentQuota == null ||
-        !currentQuota.shouldRefreshBeforeBlocking(DateTime.now())) {
-      return;
-    }
-
-    await refreshQuota();
-  }
-
   Future<void> buyPlan(SubscriptionPlan plan) async {
     if (plan.isFree) return;
+    _userStartedStorePurchase = true;
     await _guard(() async {
       await _store.buy(plan);
     });
@@ -458,18 +444,37 @@ class AppController extends ChangeNotifier {
 
   Future<void> _syncStoreProducts() async {
     storeProducts = await _store.loadProducts(plans);
+    if (_pendingStorePurchases.isNotEmpty) {
+      final purchases = List<PurchaseDetails>.of(_pendingStorePurchases);
+      _pendingStorePurchases.clear();
+      await _handlePurchases(purchases);
+    }
   }
 
   Future<void> _handlePurchases(List<PurchaseDetails> purchases) async {
     for (final purchase in purchases) {
       if (purchase.status == PurchaseStatus.error) {
-        error = purchase.error?.message;
+        _debugLogError(
+          'Purchase stream error',
+          '${purchase.productID}: ${purchase.error?.code} ${purchase.error?.message}',
+        );
+        if (_userStartedStorePurchase) {
+          error = _storeErrorMessage;
+        }
+        if (purchase.pendingCompletePurchase) {
+          await _store.complete(purchase);
+        }
         notifyListeners();
         continue;
       }
 
       if (purchase.status != PurchaseStatus.purchased &&
           purchase.status != PurchaseStatus.restored) {
+        continue;
+      }
+
+      if (plans.isEmpty) {
+        _deferStorePurchase(purchase);
         continue;
       }
 
@@ -483,25 +488,53 @@ class AppController extends ChangeNotifier {
       }
 
       if (plan == null) {
-        error = 'Unknown store product: ${purchase.productID}';
+        _deferStorePurchase(purchase);
+        _debugLogError('Unknown store product', purchase.productID);
+        if (_userStartedStorePurchase) {
+          error = _storeErrorMessage;
+        }
         notifyListeners();
         continue;
       }
 
-      await _guard(() async {
-        quota = await _repository.verifyStorePurchase(
-          platform: _store.platform,
-          productId: purchase.productID,
-          purchaseToken: purchase.verificationData.serverVerificationData,
-          transactionId: purchase.purchaseID,
-        );
-        final payload = await _repository.me();
-        notifications = payload?.notifications ?? notifications;
-        _rememberNotifications(notifications);
-        if (purchase.pendingCompletePurchase) {
-          await _store.complete(purchase);
-        }
-      });
+      await _guard(() => _activateStorePurchase(purchase));
+    }
+  }
+
+  Future<void> _activateStorePurchase(PurchaseDetails purchase) async {
+    try {
+      quota = await _repository.verifyStorePurchase(
+        platform: _store.platform,
+        productId: purchase.productID,
+        purchaseToken: purchase.verificationData.serverVerificationData,
+        transactionId: purchase.purchaseID,
+      );
+      final payload = await _repository.me();
+      notifications = payload?.notifications ?? notifications;
+      _rememberNotifications(notifications);
+      message = locale == 'en'
+          ? 'Congratulations, your plan purchase was successful.'
+          : 'Chúc mừng bạn đã mua gói thành công.';
+      if (purchase.pendingCompletePurchase) {
+        await _store.complete(purchase);
+      }
+    } on ApiException catch (exception) {
+      _debugLogError('Store purchase verification error', exception);
+      throw const StorePurchaseException();
+    } on PlatformException catch (exception) {
+      _debugLogError('Store purchase completion error', exception);
+      throw const StorePurchaseException();
+    }
+  }
+
+  void _deferStorePurchase(PurchaseDetails purchase) {
+    final alreadyQueued = _pendingStorePurchases.any(
+      (item) =>
+          item.productID == purchase.productID &&
+          item.purchaseID == purchase.purchaseID,
+    );
+    if (!alreadyQueued) {
+      _pendingStorePurchases.add(purchase);
     }
   }
 
@@ -549,16 +582,83 @@ class AppController extends ChangeNotifier {
       await action();
     } on ApiException catch (exception) {
       onApiException?.call(exception);
-      if (!swallowAuth) error = exception.message;
+      _debugLogError('API error', exception);
+      if (!swallowAuth) error = _apiErrorMessage(exception);
       if (swallowAuth && exception.statusCode == 401) {
         await _repository.clearToken();
       }
+    } on StorePurchaseException {
+      if (!swallowAuth) error = _storeErrorMessage;
+    } on PlatformException catch (exception) {
+      _debugLogError('Platform store error', exception);
+      if (!swallowAuth) error = _storeErrorMessage;
+    } on SocketException catch (exception) {
+      _debugLogError('Network error', exception);
+      if (!swallowAuth) error = _networkErrorMessage;
+    } on FormatException catch (exception) {
+      _debugLogError('Response format error', exception);
+      if (!swallowAuth) error = _serverErrorMessage;
     } catch (exception) {
-      if (!swallowAuth) error = exception.toString();
+      _debugLogError('Unexpected error', exception);
+      if (!swallowAuth) error = _genericErrorMessage;
     } finally {
       isBusy = false;
       notifyListeners();
     }
+  }
+
+  String _apiErrorMessage(ApiException exception) {
+    final code = exception.body['code']?.toString();
+    if (exception.statusCode == 402 || code == 'quota_exhausted') {
+      return locale == 'en'
+          ? 'You have used all readings in your plan. Upgrade to continue.'
+          : 'Bạn đã dùng hết số lần xem trong gói. Hãy nâng cấp để tiếp tục.';
+    }
+    if (code == 'account_locked') {
+      return locale == 'en'
+          ? 'Your account is locked. Please contact support.'
+          : 'Tài khoản của bạn bị khoá. Vui lòng liên hệ hỗ trợ.';
+    }
+    if (exception.statusCode == 401 || exception.statusCode == 403) {
+      return locale == 'en'
+          ? 'The account information is incorrect or the session has expired.'
+          : 'Thông tin tài khoản chưa đúng hoặc phiên đăng nhập đã hết hạn.';
+    }
+    if (exception.statusCode == 422) {
+      return locale == 'en'
+          ? 'Please check the information and try again.'
+          : 'Vui lòng kiểm tra thông tin và thử lại.';
+    }
+    if (exception.statusCode == 404) {
+      return locale == 'en'
+          ? 'The requested content is no longer available.'
+          : 'Nội dung này không còn khả dụng.';
+    }
+    if (exception.statusCode >= 500) return _serverErrorMessage;
+    return _genericErrorMessage;
+  }
+
+  String get _storeErrorMessage => locale == 'en'
+      ? 'Purchase failed. Please try again later.'
+      : 'Mua gói thất bại. Vui lòng thử lại sau.';
+
+  String get _networkErrorMessage => locale == 'en'
+      ? 'Unable to connect. Please check your internet connection.'
+      : 'Không thể kết nối. Vui lòng kiểm tra Internet.';
+
+  String get _serverErrorMessage => locale == 'en'
+      ? 'The service is temporarily unavailable. Please try again later.'
+      : 'Dịch vụ tạm thời chưa sẵn sàng. Vui lòng thử lại sau.';
+
+  String get _genericErrorMessage => locale == 'en'
+      ? 'Something went wrong. Please try again.'
+      : 'Đã có lỗi xảy ra. Vui lòng thử lại.';
+
+  void _debugLogError(String label, Object details) {
+    assert(() {
+      debugPrint('[AppController] $label: $details');
+      return true;
+    }());
   }
 }
 

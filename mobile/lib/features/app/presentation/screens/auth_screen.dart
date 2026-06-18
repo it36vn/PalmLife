@@ -237,9 +237,7 @@ class _AuthScreenState extends State<AuthScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(s.lockedAccountTitle),
-        content: Text(
-          locked.message.isEmpty ? s.lockedAccountMessage : locked.message,
-        ),
+        content: Text(s.lockedAccountMessage),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),

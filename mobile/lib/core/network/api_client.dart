@@ -8,7 +8,7 @@ class ApiClient {
 
   static const baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://xemchitay.it36vn/api',
+    defaultValue: 'https://xemchitay.it36vn.com/api',
   );
 
   final http.Client _http;

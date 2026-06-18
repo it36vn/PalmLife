@@ -36,6 +36,17 @@ class _PalmScreenState extends State<PalmScreen> {
     birthDate: DateTime.tryParse(_birth.text),
     gender: _gender,
   );
+  
+  @override
+  void initState() {
+    super.initState();
+    final user = widget.controller.user;
+    if (user != null) {
+      _name.text = user.name;
+      _birth.text = user.birthDate?.toIso8601String().substring(0, 10) ?? '';
+      _gender = user.gender ?? 'female';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
