@@ -62,8 +62,8 @@ class AnalysisController extends Controller
             return response()->json([
                 'code' => 'quota_exhausted',
                 'message' => ($data['locale'] ?? 'vi') === 'en'
-                    ? 'You have used all readings in your plan. Upgrade to continue.'
-                    : 'Bạn đã dùng hết số lần xem trong gói. Vui lòng nâng cấp để tiếp tục.',
+                    ? 'Your current plan has no readings left. Please wait for your quota to reset or upgrade to a higher plan.'
+                    : 'Gói hiện tại đã hết số lần xem. Vui lòng chờ đến khi làm mới lượt hoặc nâng cấp lên gói cao hơn.',
                 'quota' => $quota,
             ], 402);
         }

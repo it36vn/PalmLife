@@ -37,8 +37,8 @@ class AppStrings {
       ? 'I agree to the terms, privacy notice, and entertainment-only disclaimer.'
       : 'Tôi đồng ý điều khoản, thông báo quyền riêng tư và tuyên bố nội dung chỉ dùng cho giải trí.';
   String get quotaExhausted => isEn
-      ? 'You have used all readings in your plan. Upgrade to continue.'
-      : 'Bạn đã dùng hết số lần xem trong gói. Để tiếp tục hãy nâng cấp.';
+      ? 'Your current plan has no readings left. Please wait for your quota to reset or upgrade to a higher plan.'
+      : 'Gói hiện tại đã hết số lần xem. Vui lòng chờ đến khi làm mới lượt hoặc nâng cấp lên gói cao hơn.';
   String get upgradeNow => isEn ? 'Upgrade' : 'Nâng cấp';
   String get upgradeLifetime =>
       isEn ? 'Upgrade to Lifetime' : 'Nâng cấp gói Vĩnh viễn';

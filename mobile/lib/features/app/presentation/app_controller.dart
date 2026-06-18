@@ -167,6 +167,26 @@ class AppController extends ChangeNotifier {
     });
   }
 
+  Future<void> refreshQuota() async {
+    await _guard(() async {
+      final payload = await _repository.me();
+      user = payload?.user ?? user;
+      quota = payload?.quota ?? quota;
+      notifications = payload?.notifications ?? notifications;
+      _rememberNotifications(notifications);
+    });
+  }
+
+  Future<void> refreshQuotaIfResetElapsed() async {
+    final currentQuota = quota;
+    if (currentQuota == null ||
+        !currentQuota.shouldRefreshBeforeBlocking(DateTime.now())) {
+      return;
+    }
+
+    await refreshQuota();
+  }
+
   Future<void> buyPlan(SubscriptionPlan plan) async {
     if (plan.isFree) return;
     await _guard(() async {

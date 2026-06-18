@@ -95,37 +95,56 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return Scaffold(
       appBar: AppBar(title: Text(titles[_tab])),
       body: SafeArea(child: pages[_tab]),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (value) => setState(() => _tab = value),
-        destinations: [
-          NavigationDestination(
-            icon: const Icon(Icons.history),
-            label: s.history,
+      bottomNavigationBar: Theme(
+        data: Theme.of(context).copyWith(
+          splashColor: Colors.transparent,
+          highlightColor: Colors.transparent,
+          splashFactory: NoSplash.splashFactory,
+          navigationBarTheme: const NavigationBarThemeData(
+            indicatorColor: Colors.transparent,
           ),
-          NavigationDestination(
-            icon: const Icon(Icons.back_hand_outlined),
-            label: s.palmReading,
-          ),
-          NavigationDestination(
-            icon: widget.controller.unreadNotificationsCount == 0
-                ? const Icon(Icons.notifications_outlined)
-                : Badge.count(
-                    count: widget.controller.unreadNotificationsCount,
-                    child: const Icon(Icons.notifications_outlined),
-                  ),
-            label: s.notifications,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.settings_outlined),
-            label: s.settings,
-          ),
-        ],
+        ),
+        child: NavigationBar(
+          animationDuration: Duration.zero,
+          selectedIndex: _tab,
+          onDestinationSelected: (value) => setState(() => _tab = value),
+          destinations: [
+            NavigationDestination(
+              icon: const Icon(Icons.history),
+              label: s.history,
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.back_hand_outlined),
+              label: s.palmReading,
+            ),
+            NavigationDestination(
+              icon: widget.controller.unreadNotificationsCount == 0
+                  ? const Icon(Icons.notifications_outlined)
+                  : Badge.count(
+                      count: widget.controller.unreadNotificationsCount,
+                      child: const Icon(Icons.notifications_outlined),
+                    ),
+              label: s.notifications,
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.settings_outlined),
+              label: s.settings,
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Future<void> _pick(ImageSource source, ReadingProfileInput profile) async {
+    await widget.controller.refreshQuotaIfResetElapsed();
+    if (!mounted) return;
+
+    if (_quotaExhausted) {
+      await _showQuotaExhaustedDialog();
+      return;
+    }
+
     if (await _shouldOpenPermissionSettings(source)) {
       if (!mounted) return;
       await _showPermissionSettingsDialog(source);
@@ -168,6 +187,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _permissionAllowed(PermissionStatus status) =>
       status.isGranted || status.isLimited;
 
+  bool get _quotaExhausted {
+    final quota = widget.controller.quota;
+    return quota?.isExhausted ?? false;
+  }
+
   Future<void> _markPickTried(ImageSource source) {
     return source == ImageSource.camera
         ? widget.controller.notificationsDevice.markCameraPickTried()
@@ -202,13 +226,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     XFile picked,
     ReadingProfileInput profile,
   ) async {
-    final s = AppStrings.of(widget.controller.locale);
     final quotaError = await widget.controller.analyze(
       File(picked.path),
       'palm',
       profile,
     );
     if (!mounted || !quotaError) return;
+    await _showQuotaExhaustedDialog();
+  }
+
+  Future<void> _showQuotaExhaustedDialog() async {
+    if (!mounted) return;
+    final s = AppStrings.of(widget.controller.locale);
     final upgrade = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
