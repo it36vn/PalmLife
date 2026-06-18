@@ -88,9 +88,9 @@ class SubscriptionScreen extends StatelessWidget {
             controller.message!,
             style: TextStyle(color: Theme.of(context).colorScheme.primary),
           ),
-        if (hasAvailablePlan && controller.error != null)
+        if (hasAvailablePlan && controller.purchaseError != null)
           Text(
-            controller.error!,
+            controller.purchaseError!,
             style: TextStyle(color: Theme.of(context).colorScheme.error),
           ),
       ],

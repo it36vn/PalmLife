@@ -46,6 +46,7 @@ class AppController extends ChangeNotifier {
   int notificationsPage = 1;
   bool notificationsHasMore = false;
   String? error;
+  String? purchaseError;
   String? message;
   LockedAccount? lockedAccount;
   bool isBusy = false;
@@ -166,6 +167,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> refreshPlans() async {
+    purchaseError = null;
     await _guard(() async {
       plans = await _repository.plans();
       await _syncStoreProducts();
@@ -177,11 +179,11 @@ class AppController extends ChangeNotifier {
     _userStartedStorePurchase = true;
     await _guard(() async {
       await _store.buy(plan);
-    });
+    }, storeErrorsToPurchase: true);
   }
 
   Future<void> restorePurchases() async {
-    await _guard(_store.restore);
+    await _guard(_store.restore, storeErrorsToPurchase: true);
   }
 
   Future<bool> analyze(
@@ -459,7 +461,7 @@ class AppController extends ChangeNotifier {
           '${purchase.productID}: ${purchase.error?.code} ${purchase.error?.message}',
         );
         if (_userStartedStorePurchase) {
-          error = _storeErrorMessage;
+          purchaseError = _storeErrorMessage;
         }
         if (purchase.pendingCompletePurchase) {
           await _store.complete(purchase);
@@ -491,13 +493,16 @@ class AppController extends ChangeNotifier {
         _deferStorePurchase(purchase);
         _debugLogError('Unknown store product', purchase.productID);
         if (_userStartedStorePurchase) {
-          error = _storeErrorMessage;
+          purchaseError = _storeErrorMessage;
         }
         notifyListeners();
         continue;
       }
 
-      await _guard(() => _activateStorePurchase(purchase));
+      await _guard(
+        () => _activateStorePurchase(purchase),
+        storeErrorsToPurchase: _userStartedStorePurchase,
+      );
     }
   }
 
@@ -570,10 +575,12 @@ class AppController extends ChangeNotifier {
   Future<void> _guard(
     Future<void> Function() action, {
     bool swallowAuth = false,
+    bool storeErrorsToPurchase = false,
     void Function(ApiException exception)? onApiException,
   }) async {
     isBusy = true;
     error = null;
+    if (storeErrorsToPurchase) purchaseError = null;
     message = null;
     lockedAccount = null;
     notifyListeners();
@@ -588,10 +595,25 @@ class AppController extends ChangeNotifier {
         await _repository.clearToken();
       }
     } on StorePurchaseException {
-      if (!swallowAuth) error = _storeErrorMessage;
+      if (!swallowAuth) {
+        if (storeErrorsToPurchase) {
+          purchaseError = _storeErrorMessage;
+        } else {
+          _debugLogError(
+            'Store purchase error outside purchase screen',
+            action,
+          );
+        }
+      }
     } on PlatformException catch (exception) {
       _debugLogError('Platform store error', exception);
-      if (!swallowAuth) error = _storeErrorMessage;
+      if (!swallowAuth) {
+        if (storeErrorsToPurchase) {
+          purchaseError = _storeErrorMessage;
+        } else {
+          error = _genericErrorMessage;
+        }
+      }
     } on SocketException catch (exception) {
       _debugLogError('Network error', exception);
       if (!swallowAuth) error = _networkErrorMessage;
